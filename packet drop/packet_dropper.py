@@ -12,14 +12,13 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Simulate UDP packet loss for video streaming.")
     parser.add_argument('--listen-port', type=int, default=7000, help="Port to receive UDP packets")
     parser.add_argument('--forward-port', type=int, default=7001, help="Port to forward UDP packets")
-    parser.add_argument('--drop-rate', type=float, default=0.25, help="Packet drop probability (0 to 1)")
-    parser.add_argument('--output-file', type=str, default='received_dropped_25.mp4', help="Output video file")
-    parser.add_argument('--input-file', type=str, default='input.mp4', help="Input video file")
+    parser.add_argument('--drop-rate', type=float, default=0.70, help="Packet drop probability (0 to 1)")
+    parser.add_argument('--output-file', type=str, default='received_dropped_0.70.mpg', help="Output video file")
+    parser.add_argument('--input-file', type=str, default='input_mpeg2.mpg', help="Input video file")
     parser.add_argument('--max-delay', type=float, default=0.0, help="Max delay in seconds for forwarded packets")
     return parser.parse_args()
 
 def check_prerequisites(input_file, listen_port, forward_port):
-    """Validate FFmpeg, input file, and ports."""
     try:
         subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -46,22 +45,23 @@ def start_ffmpeg_receiver(forward_port, output_file):
     cmd = [
         "ffmpeg", "-y", "-f", "mpegts",
         f"-i", f"udp://127.0.0.1:{forward_port}?buffer_size=655360&timeout=5000000&reconnect=1",
-        "-c:v", "libx264", "-preset", "fast", "-c:a", "aac",
-        "-movflags", "+faststart+frag_keyframe", "-fflags", "+genpts+discardcorrupt",
+        "-c:v", "copy", "-c:a", "copy",  # Preserve MPEG-2 and MP2
+        "-f", "mpeg",  # Output MPEG Program Stream
         output_file
     ]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 def start_ffmpeg_sender(input_file, listen_port):
     cmd = [
-        "ffmpeg", "-re", "-i", input_file, "-f", "mpegts",
+        "ffmpeg", "-re", "-i", input_file,
+        "-c:v", "copy", "-c:a", "copy",  
+        "-f", "mpegts",
         "-muxdelay", "0.05", "-muxpreload", "0.05",
-        f"udp://127.0.0.1:{listen_port}?pkt_size=1316&bitrate=5000000"
+        f"udp://127.0.0.1:{listen_port}?pkt_size=1316"
     ]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 def log_ffmpeg_output(process, name):
-    """Log FFmpeg stderr in real-time."""
     for line in iter(process.stderr.readline, ''):
         if line.strip():
             logging.debug(f"{name} FFmpeg: {line.strip()}")
@@ -99,7 +99,6 @@ def udp_packet_dropper(listen_port, forward_port, drop_rate, max_delay, stop_eve
 def main():
     args = parse_arguments()
     
-    # Set up logging with DEBUG level for real-time console output
     logging.basicConfig(
         level=logging.DEBUG,
         format='[%(asctime)s] %(levelname)s: %(message)s',
@@ -111,27 +110,24 @@ def main():
 
     stop_event = threading.Event()
 
-    # Start FFmpeg receiver
     ffmpeg_receiver = start_ffmpeg_receiver(args.forward_port, args.output_file)
     receiver_thread = threading.Thread(target=log_ffmpeg_output, args=(ffmpeg_receiver, "Receiver"))
     receiver_thread.start()
 
-    # Start packet dropper
     dropper_thread = threading.Thread(
         target=udp_packet_dropper,
         args=(args.listen_port, args.forward_port, args.drop_rate, args.max_delay, stop_event)
     )
     dropper_thread.start()
 
-    time.sleep(3)  # Wait for initialization
+    time.sleep(3)
 
-    # Start FFmpeg sender
     ffmpeg_sender = start_ffmpeg_sender(args.input_file, args.listen_port)
     sender_thread = threading.Thread(target=log_ffmpeg_output, args=(ffmpeg_sender, "Sender"))
     sender_thread.start()
 
     try:
-        ffmpeg_sender.wait(timeout=300)  # 5-minute timeout
+        ffmpeg_sender.wait(timeout=300)
     except subprocess.TimeoutExpired:
         logging.warning("FFmpeg sender timed out.")
     except KeyboardInterrupt:
