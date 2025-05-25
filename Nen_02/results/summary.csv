@@ -1,0 +1,9 @@
+Bitrate,DiscardRate,PSNR,SSIM,OutputVideo
+500k,0.0,39.292,0.9556,results\received_500k_0.ts
+500k,0.05,25.415,0.8672,results\received_500k_5.ts
+1000k,0.0,39.014,0.9542,results\received_1000k_0.ts
+1000k,0.05,23.053,0.8423,results\received_1000k_5.ts
+1500k,0.0,39.43,0.956,results\received_1500k_0.ts
+1500k,0.05,18.679,0.7975,results\received_1500k_5.ts
+2000,0.0,38.934,0.954,results\received_2000_0.ts
+2000,0.05,24.94,0.8542,results\received_2000_5.ts
